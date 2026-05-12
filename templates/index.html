@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ứng Dụng Chỉnh Sửa Ánh Sáng Ảnh</title>
+    <style>
+        body { font-family: Arial, sans-serif; display: flex; padding: 20px; gap: 20px; background-color: #f0f2f5; margin: 0; height: 100vh; box-sizing: border-box;}
+        
+        /* CỘT CÔNG CỤ BÊN TRÁI */
+        .sidebar { width: 340px; background: transparent; padding-right: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px;}
+        
+        /* CÁC KHUNG PHÂN LOẠI */
+        .category-box { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border: 1px solid #e1e4e8;}
+        .category-box h4 { margin: 0 0 15px 0; padding-bottom: 8px; border-bottom: 2px solid #f0f2f5; color: #333; font-size: 16px; text-transform: uppercase;}
+        .category-box h5 { margin: 10px 0 5px 0; font-size: 13px; color: #666; font-weight: bold;}
+        
+        .main { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: relative;}
+        
+        img { max-width: 100%; max-height: 80vh; object-fit: contain; margin-top: 50px; transition: opacity 0.2s;}
+        
+        .slider-group { margin-bottom: 12px; }
+        .slider-group label { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 13px; color: #444;}
+        input[type="range"] { width: 100%; cursor: pointer;}
+        
+        /* THANH CÔNG CỤ TRÊN CÙNG BÊN PHẢI */
+        .toolbar { position: absolute; top: 20px; right: 20px; display: flex; gap: 8px; background: rgba(255, 255, 255, 0.9); padding: 8px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 10;}
+        .toolbar button { padding: 8px 12px; cursor: pointer; border: 1px solid #ddd; background: #fff; color: #333; border-radius: 6px; font-size: 14px; font-weight: 500; transition: all 0.2s;}
+        .toolbar button:hover:not(:disabled) { background: #f0f0f0; }
+        .toolbar button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #btn-download { background: #007bff; color: white; border-color: #007bff;}
+        #btn-download:hover:not(:disabled) { background: #0056b3; }
+
+        input[type="file"] { position: absolute; top: 20px; left: 20px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <!-- KHUNG 1: ÁNH SÁNG -->
+        <div class="category-box">
+            <h4>💡 Ánh Sáng</h4>
+            <div id="cat-light"></div>
+        </div>
+
+        <!-- KHUNG 2: MÀU SẮC -->
+        <div class="category-box">
+            <h4>🎨 Màu Sắc</h4>
+            <div id="cat-color"></div>
+        </div>
+
+        <!-- KHUNG 3: KÊNH RGB -->
+        <div class="category-box">
+            <h4>🚥 Kênh RGB</h4>
+            <h5>Độ nhạy (Gain)</h5>
+            <div id="cat-rgb-gain"></div>
+            <h5>Độ dời (Offset)</h5>
+            <div id="cat-rgb-offset"></div>
+        </div>
+
+        <!-- KHUNG 4: HIỆU ỨNG -->
+        <div class="category-box">
+            <h4>✨ Hiệu Ứng</h4>
+            <div id="cat-effect"></div>
+        </div>
+    </div>
+    
+    <div class="main">
+        <input type="file" id="upload" accept="image/*">
+        
+        <div class="toolbar">
+            <button id="btn-undo" disabled>↶ Undo</button>
+            <button id="btn-redo" disabled>↷ Redo</button>
+            <button id="btn-reset" disabled>↺ Reset</button>
+            <button id="btn-compare" disabled>👁 So sánh</button>
+            <button id="btn-download" disabled>⬇ Download</button>
+        </div>
+
+        <img id="preview" src="" alt="Vui lòng tải ảnh lên">
+    </div>
+
+    <script>
+        // Cấu hình thanh trượt kèm theo thuộc tính 'cat' (category) để phân loại vào đúng khung
+        const sliders = [
+            // Ánh sáng
+            { id: 'brightness', name: 'Độ sáng', min: -100, max: 100, value: 0, cat: 'cat-light' },
+            { id: 'contrast', name: 'Tương phản', min: -100, max: 100, value: 0, cat: 'cat-light' },
+            { id: 'gamma', name: 'Gamma', min: -100, max: 100, value: 0, cat: 'cat-light' },
+            
+            // Màu sắc
+            { id: 'saturation', name: 'Bão hòa (Sat)', min: -100, max: 100, value: 0, cat: 'cat-color' },
+            { id: 'vibrance', name: 'Rực rỡ (Vib)', min: -100, max: 100, value: 0, cat: 'cat-color' },
+            { id: 'hue', name: 'Dịch sắc (Hue)', min: -90, max: 90, value: 0, cat: 'cat-color' },
+            { id: 'temperature', name: 'Nhiệt độ (Temp)', min: -100, max: 100, value: 0, cat: 'cat-color' },
+            { id: 'tint', name: 'Ám màu (Tint)', min: -100, max: 100, value: 0, cat: 'cat-color' },
+
+            // Kênh RGB - Gain
+            { id: 'r_gain', name: 'Red Gain', min: -100, max: 100, value: 0, cat: 'cat-rgb-gain' },
+            { id: 'g_gain', name: 'Green Gain', min: -100, max: 100, value: 0, cat: 'cat-rgb-gain' },
+            { id: 'b_gain', name: 'Blue Gain', min: -100, max: 100, value: 0, cat: 'cat-rgb-gain' },
+
+            // Kênh RGB - Offset
+            { id: 'r_offset', name: 'Red Offset', min: -100, max: 100, value: 0, cat: 'cat-rgb-offset' },
+            { id: 'g_offset', name: 'Green Offset', min: -100, max: 100, value: 0, cat: 'cat-rgb-offset' },
+            { id: 'b_offset', name: 'Blue Offset', min: -100, max: 100, value: 0, cat: 'cat-rgb-offset' },
+
+            // Hiệu ứng
+            { id: 'sharpen', name: 'Sắc nét', min: 0, max: 100, value: 0, cat: 'cat-effect' },
+            { id: 'vignette', name: 'Viền tối', min: 0, max: 100, value: 0, cat: 'cat-effect' },
+            { id: 'grayscale', name: 'Thang xám', min: 0, max: 100, value: 0, cat: 'cat-effect' }
+        ];
+
+        const params = {};
+        let historyStack = [];
+        let currentIndex = -1;
+        let originalImageSrc = '';
+        let currentEditedImageSrc = '';
+
+        // Tự động rải thanh trượt vào đúng khung (dựa theo id của the div)
+        sliders.forEach(s => {
+            params[s.id] = s.value;
+            const container = document.getElementById(s.cat);
+            if(container) {
+                const div = document.createElement('div');
+                div.className = 'slider-group';
+                div.innerHTML = `
+                    <label>${s.name} <span id="${s.id}-val">${s.value}</span></label>
+                    <input type="range" id="${s.id}" min="${s.min}" max="${s.max}" value="${s.value}">
+                `;
+                container.appendChild(div);
+
+                const input = div.querySelector('input');
+                input.addEventListener('input', (e) => {
+                    document.getElementById(`${s.id}-val`).innerText = e.target.value;
+                    params[s.id] = parseFloat(e.target.value);
+                    triggerProcess();
+                });
+                input.addEventListener('change', () => saveState());
+            }
+        });
+
+        // Hệ thống Undo/Redo/Reset
+        function saveState() {
+            const currentState = { ...params };
+            if (currentIndex < historyStack.length - 1) {
+                historyStack = historyStack.slice(0, currentIndex + 1);
+            }
+            if (currentIndex >= 0 && JSON.stringify(historyStack[currentIndex]) === JSON.stringify(currentState)) return;
+            historyStack.push(currentState);
+            currentIndex++;
+            updateButtonsState();
+        }
+
+        function applyState(state) {
+            Object.assign(params, state);
+            sliders.forEach(s => {
+                document.getElementById(s.id).value = params[s.id];
+                document.getElementById(`${s.id}-val`).innerText = params[s.id];
+            });
+            triggerProcess();
+        }
+
+        function updateButtonsState() {
+            document.getElementById('btn-undo').disabled = currentIndex <= 0;
+            document.getElementById('btn-redo').disabled = currentIndex >= historyStack.length - 1;
+            document.getElementById('btn-reset').disabled = currentIndex <= 0;
+        }
+
+        document.getElementById('btn-undo').addEventListener('click', () => {
+            if (currentIndex > 0) applyState(historyStack[--currentIndex]);
+        });
+        document.getElementById('btn-redo').addEventListener('click', () => {
+            if (currentIndex < historyStack.length - 1) applyState(historyStack[++currentIndex]);
+        });
+        document.getElementById('btn-reset').addEventListener('click', () => {
+            applyState(historyStack[0]);
+            saveState();
+        });
+
+        // Tính năng So Sánh
+        const btnCompare = document.getElementById('btn-compare');
+        const previewImg = document.getElementById('preview');
+        btnCompare.addEventListener('mousedown', () => previewImg.src = originalImageSrc);
+        btnCompare.addEventListener('touchstart', () => previewImg.src = originalImageSrc);
+        btnCompare.addEventListener('mouseup', () => previewImg.src = currentEditedImageSrc);
+        btnCompare.addEventListener('mouseleave', () => previewImg.src = currentEditedImageSrc);
+        btnCompare.addEventListener('touchend', () => previewImg.src = currentEditedImageSrc);
+
+        // Tính năng Download
+        document.getElementById('btn-download').addEventListener('click', async () => {
+            const btn = document.getElementById('btn-download');
+            btn.innerText = '⏳ Đang xử lý...';
+            btn.disabled = true;
+            
+            try {
+                // Gọi API lấy file
+                const res = await fetch('/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(params)
+                });
+                
+                if (!res.ok) throw new Error('Lỗi từ server!');
+
+                // Chuyển dữ liệu nhận được thành dạng file nhị phân (Blob)
+                const blob = await res.blob();
+                
+                // Tạo một đường link ảo trong bộ nhớ trình duyệt trỏ tới file này
+                const url = window.URL.createObjectURL(blob);
+                
+                // Tạo thẻ a và click tải xuống
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = 'anh_da_chinh_sua.png';
+                document.body.appendChild(a);
+                a.click();
+                
+                // Dọn dẹp rác bộ nhớ sau khi tải xong
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                
+            } catch (error) {
+                console.error("Lỗi tải ảnh: ", error);
+                alert("Không thể tải ảnh xuống, vui lòng thử lại!");
+            } finally {
+                // Trả lại trạng thái nút bấm
+                btn.innerText = '⬇ Download';
+                btn.disabled = false;
+            }
+        });
+
+        // Xử lý Upload
+        document.getElementById('upload').addEventListener('change', async (e) => {
+            if (!e.target.files.length) return;
+            const formData = new FormData();
+            formData.append('file', e.target.files[0]);
+            
+            const res = await fetch('/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            
+            originalImageSrc = data.image;
+            currentEditedImageSrc = data.image;
+            document.getElementById('preview').src = data.image;
+
+            document.getElementById('btn-compare').disabled = false;
+            document.getElementById('btn-download').disabled = false;
+
+            historyStack = [];
+            currentIndex = -1;
+            sliders.forEach(s => {
+                params[s.id] = 0;
+                document.getElementById(s.id).value = 0;
+                document.getElementById(`${s.id}-val`).innerText = 0;
+            });
+            saveState();
+        });
+
+        // Debounce Gửi dữ liệu (Chống lag) và tránh nhận response cũ khi thay đổi nhiều thông số.
+        let timeout;
+        let activeProcessController = null;
+        let latestProcessRequestId = 0;
+
+        function triggerProcess() {
+            clearTimeout(timeout);
+            timeout = setTimeout(async () => {
+                latestProcessRequestId += 1;
+                const requestId = latestProcessRequestId;
+
+                if (activeProcessController) {
+                    activeProcessController.abort();
+                }
+                activeProcessController = new AbortController();
+
+                try {
+                    const res = await fetch('/process', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(params),
+                        signal: activeProcessController.signal
+                    });
+
+                    if (!res.ok) {
+                        console.warn('Process request failed:', res.status);
+                        return;
+                    }
+
+                    const data = await res.json();
+                    if (requestId !== latestProcessRequestId) {
+                        return;
+                    }
+                    if (data.image) {
+                        currentEditedImageSrc = data.image;
+                        document.getElementById('preview').src = currentEditedImageSrc;
+                    }
+                } catch (error) {
+                    if (error.name === 'AbortError') {
+                        return;
+                    }
+                    console.error('Quá trình xử lý ảnh lỗi:', error);
+                }
+            }, 60);
+        }
+    </script>
+</body>
+</html>
