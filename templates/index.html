@@ -15,19 +15,25 @@
         .category-box h4 { margin: 0 0 15px 0; padding-bottom: 8px; border-bottom: 2px solid #f0f2f5; color: #333; font-size: 16px; text-transform: uppercase;}
         .category-box h5 { margin: 10px 0 5px 0; font-size: 13px; color: #666; font-weight: bold;}
         
-        .main { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: relative;}
+        .main { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: relative; overflow: hidden;}
         
-        img { max-width: 100%; max-height: 80vh; object-fit: contain; margin-top: 50px; transition: opacity 0.2s;}
+        .image-container { max-width: 100%; max-height: 80vh; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-top: 50px; position: relative;}
+        
+        img { max-width: 100%; max-height: 80vh; object-fit: contain; transition: transform 0.1s linear; transform-origin: center center; cursor: grab; user-select: none;}
+        img.dragging { transition: none;}
+        img:active { cursor: grabbing;}
         
         .slider-group { margin-bottom: 12px; }
         .slider-group label { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 13px; color: #444;}
         input[type="range"] { width: 100%; cursor: pointer;}
         
         /* THANH CÔNG CỤ TRÊN CÙNG BÊN PHẢI */
-        .toolbar { position: absolute; top: 20px; right: 20px; display: flex; gap: 8px; background: rgba(255, 255, 255, 0.9); padding: 8px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 10;}
+        .toolbar { position: absolute; top: 20px; right: 20px; display: flex; gap: 8px; align-items: center; background: rgba(255, 255, 255, 0.9); padding: 8px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 10;}
         .toolbar button { padding: 8px 12px; cursor: pointer; border: 1px solid #ddd; background: #fff; color: #333; border-radius: 6px; font-size: 14px; font-weight: 500; transition: all 0.2s;}
         .toolbar button:hover:not(:disabled) { background: #f0f0f0; }
         .toolbar button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .toolbar span { font-size: 13px; color: #666; min-width: 50px; text-align: center; font-weight: 500;}
+        .zoom-divider { width: 1px; height: 24px; background: #ddd;}
         #btn-download { background: #007bff; color: white; border-color: #007bff;}
         #btn-download:hover:not(:disabled) { background: #0056b3; }
 
@@ -75,7 +81,9 @@
             <button id="btn-download" disabled>⬇ Download</button>
         </div>
 
-        <img id="preview" src="" alt="Vui lòng tải ảnh lên">
+        <div class="image-container" id="image-container">
+            <img id="preview" src="" alt="Vui lòng tải ảnh lên">
+        </div>
     </div>
 
     <script>
@@ -114,6 +122,17 @@
         let currentIndex = -1;
         let originalImageSrc = '';
         let currentEditedImageSrc = '';
+        let currentZoom = 1.0;
+        let panX = 0;
+        let panY = 0;
+        const MIN_ZOOM = 0.5;
+        const MAX_ZOOM = 3.0;
+        const ZOOM_STEP = 0.2;
+        let isDragging = false;
+        let dragStartX = 0;
+        let dragStartY = 0;
+        let dragStartPanX = 0;
+        let dragStartPanY = 0;
 
         // Tự động rải thanh trượt vào đúng khung (dựa theo id của the div)
         sliders.forEach(s => {
@@ -164,6 +183,88 @@
             document.getElementById('btn-redo').disabled = currentIndex >= historyStack.length - 1;
             document.getElementById('btn-reset').disabled = currentIndex <= 0;
         }
+
+        // Chức năng Zoom và Pan
+        function updateZoom() {
+            const img = document.getElementById('preview');
+            img.style.transform = `translate(${panX}px, ${panY}px) scale(${currentZoom})`;
+            document.getElementById('zoom-level').innerText = Math.round(currentZoom * 100) + '%';
+            updateButtonsState();
+        }
+
+        function zoomIn() {
+            if (currentZoom < MAX_ZOOM) {
+                currentZoom = Math.min(currentZoom + ZOOM_STEP, MAX_ZOOM);
+                updateZoom();
+            }
+        }
+
+        function zoomOut() {
+            if (currentZoom > MIN_ZOOM) {
+                currentZoom = Math.max(currentZoom - ZOOM_STEP, MIN_ZOOM);
+                updateZoom();
+            }
+        }
+
+        function resetZoom() {
+            currentZoom = 1.0;
+            panX = 0;
+            panY = 0;
+            updateZoom();
+        }
+
+        // Zoom với mouse wheel (cuộn chuột bình thường)
+        document.getElementById('image-container').addEventListener('wheel', (e) => {
+            e.preventDefault();
+            if (e.deltaY < 0) {
+                zoomIn();
+            } else {
+                zoomOut();
+            }
+        });
+
+        // Chức năng Drag-Pan (Di chuyển ảnh bằng chuột trái)
+        const img = document.getElementById('preview');
+        const container = document.getElementById('image-container');
+
+        img.addEventListener('mousedown', (e) => {
+            // Only start dragging on left mouse button
+            if (e.button !== 0) return;
+            if (currentZoom <= 1.0) return; // Only pan when zoomed in
+            e.preventDefault();
+            isDragging = true;
+            dragStartX = e.clientX;
+            dragStartY = e.clientY;
+            dragStartPanX = panX;
+            dragStartPanY = panY;
+            img.classList.add('dragging');
+            img.style.cursor = 'grabbing';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging || currentZoom <= 1.0) return;
+            const deltaX = e.clientX - dragStartX;
+            const deltaY = e.clientY - dragStartY;
+            panX = dragStartPanX + (deltaX / currentZoom);
+            panY = dragStartPanY + (deltaY / currentZoom);
+            updateZoom();
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                img.classList.remove('dragging');
+                img.style.cursor = 'grab';
+            }
+        });
+
+        container.addEventListener('mouseleave', () => {
+            if (isDragging) {
+                isDragging = false;
+                img.classList.remove('dragging');
+                img.style.cursor = 'grab';
+            }
+        });
 
         document.getElementById('btn-undo').addEventListener('click', () => {
             if (currentIndex > 0) applyState(historyStack[--currentIndex]);
@@ -252,6 +353,7 @@
 
             historyStack = [];
             currentIndex = -1;
+            resetZoom();
             sliders.forEach(s => {
                 params[s.id] = 0;
                 document.getElementById(s.id).value = 0;
